@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">MyPhotos</string>
+    <string name="showPhotos">Show Photos</string>
+</resources>
