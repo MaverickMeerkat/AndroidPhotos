@@ -1,8 +1,8 @@
 package com.example.drefaeli.myphotos;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
@@ -13,11 +13,10 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.RelativeLayout.LayoutParams;
-
-import java.io.File;
 import java.util.ArrayList;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
 
 public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHolder> {
     private ArrayList<String> photosPaths;
@@ -26,10 +25,14 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
     private int requiredWidth;
     private View fragmentContainer;
     private Context context;
-    ConcurrentHashMap<UUID, AsyncImageLoader> tasksDictionary;
+    private ConcurrentHashMap<UUID, AsyncImageLoader> tasksDictionary;
 
-    public RecyclerAdapter(Context context, PhotosViewModel viewModel, int requiredWidth,
-                           FragmentManager fragmentManager, View fragmentContainer) {
+    private final static String TAG_FRAGMENT = "displayPhotoFragment";
+    // images look ok even if they are twice as small (though x4 is already too much)
+    private final static int SCALE_DOWN_IMAGE_FACTOR = 2;
+
+    RecyclerAdapter(Context context, PhotosViewModel viewModel, int requiredWidth,
+                    FragmentManager fragmentManager, View fragmentContainer) {
         this.context = context;
         this.viewModel = viewModel;
         this.fragmentManager = fragmentManager;
@@ -39,16 +42,16 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
         photosPaths = new ArrayList<>();
     }
 
-    public void updatePhotosPaths(ArrayList<String> paths) {
+    void updatePhotosPaths(ArrayList<String> paths) {
         photosPaths = paths;
     }
 
-    public void addItem(int position, String path) {
+    void addItem(int position, String path) {
         photosPaths.add(position, path);
         notifyItemInserted(position);
     }
 
-    public void removeItems() {
+    void removeItems() {
         ArrayList<String> paths = viewModel.photosProvider.findRemoved(viewModel.getPhotosObject().getValue());
         for (String path : paths) {
             int position = photosPaths.indexOf(path);
@@ -57,14 +60,13 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
             viewModel.getStoredGridImages().remove(path); // remove from cache
         }
     }
-    //
 
     public class ViewHolder extends RecyclerView.ViewHolder implements View.OnClickListener {
         private final UUID key;
         private ImageView imageView;
         private String path;
 
-        public ViewHolder(ImageView v) {
+        ViewHolder(ImageView v) {
             super(v);
             v.setOnClickListener(this);
             imageView = v;
@@ -81,12 +83,12 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
         }
     }
 
-    public void showFragment(String path) {
+    private void showFragment(String path) {
         Bundle bundle = createBundle(path);
         DisplayPhotoFragment fragment = new DisplayPhotoFragment();
         fragment.setArguments(bundle);
         FragmentTransaction ft = fragmentManager.beginTransaction();
-        ft.replace(R.id.fragment_container, fragment, MainActivity.TAG_FRAGMENT);
+        ft.replace(R.id.fragment_container, fragment, TAG_FRAGMENT);
         ft.addToBackStack(null);
         ft.commit();
         fragmentContainer.setVisibility(View.VISIBLE);
@@ -99,8 +101,9 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
         return bundle;
     }
 
+    @NonNull
     @Override
-    public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         ImageView imageView = new ImageView(context);
         LayoutParams lp = new LayoutParams(requiredWidth, requiredWidth);
         imageView.setLayoutParams(lp);
@@ -110,14 +113,21 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
     }
 
     @Override
-    public void onBindViewHolder(ViewHolder holder, int position) {
+    public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         holder.imageView.setImageResource(R.mipmap.ic_launcher_round);
         String path = photosPaths.get(position);
         holder.setPath(path);
 
         AsyncImageLoader task = new AsyncImageLoader(holder);
         tasksDictionary.put(holder.key, task);
-        task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+        try {
+            task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+        } catch(RejectedExecutionException ex) {
+            // ignore -
+            // this exception doesn't really seems to create any problem, and the alternative is
+            // to use a task.execute() which is single threaded... or creating a new thread pool
+            // executer which is quite complicated (I tried, and it doesn't work well)
+        }
     }
 
     @Override
@@ -134,11 +144,12 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
         }
     }
 
+    @SuppressLint("StaticFieldLeak") // memory leaks are cautioned for
     private class AsyncImageLoader extends AsyncTask<Void, Void, Bitmap> {
         private ViewHolder viewHolder;
         private boolean shouldShow = true;
 
-        public AsyncImageLoader(ViewHolder viewHolder) {
+        AsyncImageLoader(ViewHolder viewHolder) {
             this.viewHolder = viewHolder;
         }
 
@@ -148,7 +159,9 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
             Bitmap image = viewModel.getStoredGridImages().get(viewHolder.path);
             // if empty, create new
             if (image == null) {
-                Bitmap bitmap = ImageManipulations.getScaledDownImage(viewHolder.path, requiredWidth, requiredWidth);
+                Bitmap bitmap = ImageManipulations.getScaledDownImage(viewHolder.path,
+                        requiredWidth / SCALE_DOWN_IMAGE_FACTOR,
+                        requiredWidth / SCALE_DOWN_IMAGE_FACTOR);
                 image = ImageManipulations.rotateImageByExif(bitmap, viewHolder.path);
             }
             return image;
@@ -170,5 +183,4 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
     public int getItemCount() {
         return photosPaths.size();
     }
-
 }

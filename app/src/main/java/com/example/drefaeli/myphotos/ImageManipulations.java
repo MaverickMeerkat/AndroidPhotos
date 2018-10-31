@@ -7,10 +7,9 @@ import android.media.ExifInterface;
 
 import java.io.IOException;
 
-public class ImageManipulations {
+class ImageManipulations {
 
-    public static Bitmap getScaledDownImage(String imagePath, int reqWidth, int reqHeight) {
-        // https://developer.android.com/topic/performance/graphics/load-bitmap
+    static Bitmap getScaledDownImage(String imagePath, int reqWidth, int reqHeight) {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(imagePath, options);
@@ -19,7 +18,7 @@ public class ImageManipulations {
         return BitmapFactory.decodeFile(imagePath, options);
     }
 
-    public static Bitmap rotateImageByExif(Bitmap bitmap, String path) {
+    static Bitmap rotateImageByExif(Bitmap bitmap, String path) {
         // rotate exif
         ExifInterface ei = null;
         try {
@@ -50,14 +49,14 @@ public class ImageManipulations {
         return rotatedBitmap;
     }
 
-    public static Bitmap rotateImage(Bitmap source, float angle) {
+    private static Bitmap rotateImage(Bitmap source, float angle) {
         Matrix matrix = new Matrix();
         matrix.postRotate(angle);
         return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(),
                 matrix, true);
     }
 
-    public static int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+    private static int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
         // Raw height and width of image
         final int height = options.outHeight;
         final int width = options.outWidth;
@@ -77,5 +76,4 @@ public class ImageManipulations {
         }
         return inSampleSize;
     }
-
 }

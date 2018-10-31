@@ -14,7 +14,7 @@ public class PhotosViewModel extends ViewModel {
     private final MutableLiveData<Boolean> isFragmentDisplayed = new MutableLiveData<>();
     private final ConcurrentHashMap<String, Bitmap> storedGridImages = new ConcurrentHashMap<>();
 
-    public PhotosProvider photosProvider;
+    PhotosProvider photosProvider;
 
     public PhotosViewModel() {
         photosProvider = new PhotosProvider(MyApplication.getContext());
@@ -22,24 +22,24 @@ public class PhotosViewModel extends ViewModel {
         showPhotosButtonPressed.setValue(false);
     }
 
-    public LiveData<ArrayList<String>> getPhotosObject() {
+    LiveData<ArrayList<String>> getPhotosObject() {
         return photosPaths;
     }
 
-    public void loadPhotos() {
-        ArrayList<String> photos = photosProvider.loadPhotos();
+    void loadPhotos() {
+        ArrayList<String> photos = photosProvider.getPhonePhotos();
         photosPaths.setValue(photos);
     }
 
-    public MutableLiveData<Boolean> getShowPhotosButtonState() {
+    MutableLiveData<Boolean> getShowPhotosButtonState() {
         return showPhotosButtonPressed;
     }
 
-    public ConcurrentHashMap<String, Bitmap> getStoredGridImages() {
+    ConcurrentHashMap<String, Bitmap> getStoredGridImages() {
         return storedGridImages;
     }
 
-    public MutableLiveData<Boolean> getIsFragmentDisplayed() {
+    MutableLiveData<Boolean> getIsFragmentDisplayed() {
         return isFragmentDisplayed;
     }
 }

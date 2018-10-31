@@ -1,6 +1,7 @@
 package com.example.drefaeli.myphotos;
 
 import android.Manifest;
+import android.app.ActivityManager;
 import android.arch.lifecycle.ViewModelProviders;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -21,6 +22,7 @@ import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.view.View;
 import android.view.ViewTreeObserver;
+import android.widget.Button;
 import android.widget.Toast;
 import java.util.ArrayList;
 
@@ -30,24 +32,26 @@ public class MainActivity extends AppCompatActivity {
     private PhotosViewModel viewModel;
     private FragmentManager fragmentManager;
     private int gridImageWidth;
-    private Context activityContext;
     private View fragmentContainer;
-    final static String TAG_FRAGMENT = "TAG_FRAGMENT";
-    final static int MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE = 31000;
-    final int INITIAL_GRID_IMAGE_WIDTH = 360;
-    final String BUTTON_STATE = "BUTTON_STATE";
-    final String FRAGMENT_STATE = "FRAGMENT_STATE";
-    final String RECYCLERVIEW_POSITION = "RECYCLERVIEW_POSITION";
     boolean photosAlreadyLoaded;
     private ContentObserver externalContentObserver;
+
+    private final static int PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE = 0;
+    private final static int INITIAL_GRID_IMAGE_WIDTH = 500;
+    private final static int RECYCLER_VIEW_CACHE_SIZE = 20;
+    private final static String BUTTON_STATE = "BUTTON_STATE";
+    private final static String FRAGMENT_STATE = "FRAGMENT_STATE";
+    private final static String RECYCLERVIEW_POSITION = "RECYCLERVIEW_POSITION";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        activityContext = this;
         photosAlreadyLoaded = false;
+
+        Button btn = findViewById(R.id.show_photos_btn);
+        btn.setOnClickListener(this::showPhotos);
 
         fragmentContainer = findViewById(R.id.fragment_container);
         fragmentContainer.setVisibility(View.INVISIBLE);
@@ -55,7 +59,11 @@ public class MainActivity extends AppCompatActivity {
 
         recyclerView = findViewById(R.id.photos_grid_recycler_view);
         recyclerView.setHasFixedSize(true);
-        recyclerView.setItemViewCacheSize(20);
+
+        ActivityManager.MemoryInfo memoryInfo = getAvailableMemory();
+        if (!memoryInfo.lowMemory) {
+            recyclerView.setItemViewCacheSize(RECYCLER_VIEW_CACHE_SIZE);
+        }
 
         viewModel = ViewModelProviders.of(this).get(PhotosViewModel.class);
 
@@ -67,10 +75,11 @@ public class MainActivity extends AppCompatActivity {
                 // calculate image width and photos-per-row
                 int viewWidth = recyclerView.getWidth();
                 int photosPerRow = viewWidth / INITIAL_GRID_IMAGE_WIDTH;
-                gridImageWidth = INITIAL_GRID_IMAGE_WIDTH + (viewWidth - photosPerRow * INITIAL_GRID_IMAGE_WIDTH) / photosPerRow;
+                gridImageWidth = getGridImageWidth(viewWidth, photosPerRow);
 
-                recyclerView.setLayoutManager(new GridLayoutManager(activityContext, photosPerRow));
-                recyclerAdapter = new RecyclerAdapter(activityContext, viewModel, gridImageWidth, fragmentManager, fragmentContainer);
+                recyclerView.setLayoutManager(new GridLayoutManager(getBaseContext(), photosPerRow));
+                recyclerAdapter = new RecyclerAdapter(getBaseContext(), viewModel, gridImageWidth,
+                        fragmentManager, fragmentContainer);
                 recyclerView.setAdapter(recyclerAdapter);
 
                 // update state of photos
@@ -95,6 +104,11 @@ public class MainActivity extends AppCompatActivity {
                         fragmentContainer.setVisibility(View.VISIBLE);
                     }
                 }
+            }
+
+            private int getGridImageWidth(int viewWidth, int photosPerRow) {
+                return INITIAL_GRID_IMAGE_WIDTH +
+                        (viewWidth - photosPerRow * INITIAL_GRID_IMAGE_WIDTH) / photosPerRow;
             }
         });
 
@@ -126,21 +140,23 @@ public class MainActivity extends AppCompatActivity {
                 true, externalContentObserver);
     }
 
+    private ActivityManager.MemoryInfo getAvailableMemory() {
+        ActivityManager activityManager = (ActivityManager) this.getSystemService(ACTIVITY_SERVICE);
+        ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
+        activityManager.getMemoryInfo(memoryInfo);
+        return memoryInfo;
+    }
+
     public String getRealPathFromURI(Context context, Uri contentUri) {
-        Cursor cursor = null;
-        try {
-            String[] proj = {MediaStore.Images.Media.DATA};
-            cursor = context.getContentResolver().query(contentUri, proj, null, null, null);
+        String[] proj = {MediaStore.Images.Media.DATA};
+        try (Cursor cursor = context.getContentResolver().query(contentUri, proj, null, null, null)) {
             int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
             cursor.moveToFirst();
             return cursor.getString(column_index);
-        } catch (Exception ex) {
+        } catch (NullPointerException ex) {
             // removed images come with "empty" uris: "content://media" - so query will fail
+            // and cursor = null
             return null;
-        } finally {
-            if (cursor != null) {
-                cursor.close();
-            }
         }
     }
 
@@ -187,8 +203,8 @@ public class MainActivity extends AppCompatActivity {
     private void requestPermission() {
         if (ActivityCompat.shouldShowRequestPermissionRationale(this,
                 Manifest.permission.READ_EXTERNAL_STORAGE)) {
-            Snackbar snackbar = Snackbar.make(findViewById(R.id.myCoordinatorLayout), "We need to access your photos",
-                    Snackbar.LENGTH_INDEFINITE);
+            Snackbar snackbar = Snackbar.make(findViewById(R.id.coordinatorLayout),
+                    "We need to access your photos", Snackbar.LENGTH_INDEFINITE);
             snackbar.setAction("Ok", view -> doRequestPermission());
             snackbar.show();
         } else {
@@ -199,23 +215,19 @@ public class MainActivity extends AppCompatActivity {
     private void doRequestPermission() {
         ActivityCompat.requestPermissions(this,
                 new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
-                MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE);
+                PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE);
     }
 
     private boolean isPermissionGranted() {
-        if (ContextCompat.checkSelfPermission(this,
-                Manifest.permission.READ_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED) {
-            return false;
-        } else {
-            return true;
-        }
+        return ContextCompat.checkSelfPermission(this,
+                Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
         switch (requestCode) {
-            case MY_PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE: {
+            case PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE: {
                 if (grantResults.length > 0
                         && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     viewModel.loadPhotos();
