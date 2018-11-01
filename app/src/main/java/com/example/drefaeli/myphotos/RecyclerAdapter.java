@@ -9,6 +9,7 @@ import android.support.annotation.NonNull;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentTransaction;
 import android.support.v7.widget.RecyclerView;
+import android.util.LruCache;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
@@ -42,6 +43,9 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
         photosPaths = new ArrayList<>();
     }
 
+
+
+
     void updatePhotosPaths(ArrayList<String> paths) {
         photosPaths = paths;
     }
@@ -57,7 +61,7 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
             int position = photosPaths.indexOf(path);
             photosPaths.remove(path);
             notifyItemRemoved(position);
-            viewModel.getStoredGridImages().remove(path); // remove from cache
+            //viewModel.getStoredGridImages().remove(path); // remove from cache
         }
     }
 
@@ -134,7 +138,7 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
     public void onViewRecycled(@NonNull ViewHolder holder) {
         super.onViewRecycled(holder);
 
-        viewModel.getStoredGridImages().remove(holder.path);
+        //viewModel.getStoredGridImages().remove(holder.path);
 
         tasksDictionary.remove(holder.key); // memory leak without it ... :-(
 
@@ -156,7 +160,7 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
         @Override
         protected Bitmap doInBackground(Void... params) {
             // first check the cache
-            Bitmap image = viewModel.getStoredGridImages().get(viewHolder.path);
+            Bitmap image = viewModel.getBitmapFromMemCache(viewHolder.path); // viewModel.getStoredGridImages().get(viewHolder.path);
             // if empty, create new
             if (image == null) {
                 Bitmap bitmap = ImageManipulations.getScaledDownImage(viewHolder.path,
@@ -173,7 +177,7 @@ public class RecyclerAdapter extends RecyclerView.Adapter<RecyclerAdapter.ViewHo
 
             if (!this.isCancelled() && shouldShow && bitmap != null) {
                 viewHolder.imageView.setImageBitmap(bitmap);
-                viewModel.getStoredGridImages().put(viewHolder.path, bitmap);
+                viewModel.addBitmapToMemoryCache(viewHolder.path, bitmap); //getStoredGridImages().put(viewHolder.path, bitmap);
                 tasksDictionary.remove(viewHolder.key); // memory leak without it ... :-(
             }
         }
