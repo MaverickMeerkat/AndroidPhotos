@@ -6,21 +6,21 @@ import android.os.Parcel;
 import android.os.Parcelable;
 
 public class ImageScalerRestore implements Parcelable {
-    int previousWidth;
-    int previousHeight;
+    private int previousWidth;
+    private int previousHeight;
     float previousX;
     float previousY;
     float previousScale;
     float previousImageToRelativeRatio;
 
-    ImageScalerRestore(int pWidth, int pHeight, float pX, float pY, float pScale,
-                       float pImageToRelativeRatio){
-        previousWidth = pWidth;
-        previousHeight = pHeight;
-        previousX = pX;
-        previousY = pY;
-        previousScale = pScale;
-        previousImageToRelativeRatio = pImageToRelativeRatio;
+    ImageScalerRestore(int previousWidth, int previousHeight, float previousX, float previousY, float previousScale,
+                       float previousImageToRelativeRatio){
+        this.previousWidth = previousWidth;
+        this.previousHeight = previousHeight;
+        this.previousX = previousX;
+        this.previousY = previousY;
+        this.previousScale = previousScale;
+        this.previousImageToRelativeRatio = previousImageToRelativeRatio;
     }
 
     private ImageScalerRestore(Parcel in) {

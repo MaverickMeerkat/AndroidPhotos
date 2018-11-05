@@ -1,7 +1,6 @@
 package com.example.drefaeli.myphotos;
 
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
@@ -21,8 +20,9 @@ public class DisplayPhotoFragment extends Fragment {
     private ImageView imageView;
     private ImageScaler imageScaler;
     private ImageScalerRestore scalerRestore;
+    private View rootView;
 
-    static final String PHOTO_PATH = "PHOTO_PATH"; // shared, so not private
+    private static final String PHOTO_PATH = "PHOTO_PATH";
     private static final String PREVIOUS_FRAGMENT = "previousFragmentRestoreObject";
     private static final int REQUIRED_WIDTH = 600;
     private static final int REQUIRED_HEIGHT = 1000;
@@ -30,11 +30,19 @@ public class DisplayPhotoFragment extends Fragment {
     public DisplayPhotoFragment() {
     }
 
+    public static DisplayPhotoFragment createInstance(String path){
+        Bundle bundle = new Bundle();
+        bundle.putString(PHOTO_PATH, path);
+        DisplayPhotoFragment fragment = new DisplayPhotoFragment();
+        fragment.setArguments(bundle);
+        return fragment;
+    }
+
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
 
-        final View rootView = inflater.inflate(R.layout.fragment_display_photo,
+        rootView = inflater.inflate(R.layout.fragment_display_photo,
                 container, false);
 
         setImage(rootView);
@@ -47,7 +55,7 @@ public class DisplayPhotoFragment extends Fragment {
             }
         });
 
-        gestureDetector = new GestureDetector(MyApplication.getContext(), new GestureDetector.SimpleOnGestureListener() {
+        gestureDetector = new GestureDetector(rootView.getContext(), new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
                 float newX = imageView.getX() - distanceX;
@@ -63,7 +71,7 @@ public class DisplayPhotoFragment extends Fragment {
             }
         });
 
-        scaleGestureDetector = new ScaleGestureDetector(MyApplication.getContext(),
+        scaleGestureDetector = new ScaleGestureDetector(rootView.getContext(),
                 new ScaleGestureDetector.SimpleOnScaleGestureListener() {
                     @Override
                     public boolean onScale(ScaleGestureDetector detector) {
@@ -85,9 +93,8 @@ public class DisplayPhotoFragment extends Fragment {
         String path = getArguments().getString(PHOTO_PATH);
         imageView = rootView.findViewById(R.id.full_image_view);
         // scaling down image (if it's too big) and rotating it
-        Bitmap bitmap = ImageManipulations.getScaledDownImage(path, REQUIRED_WIDTH, REQUIRED_HEIGHT);
-        Bitmap rotatedBitmap = ImageManipulations.rotateImageByExif(bitmap, path);
-        imageView.setImageBitmap(rotatedBitmap);
+        Bitmap bitmap = ImageDecoding.getScaledAndRotatedImage(path, REQUIRED_WIDTH, REQUIRED_HEIGHT);
+        imageView.setImageBitmap(bitmap);
     }
 
     @Override

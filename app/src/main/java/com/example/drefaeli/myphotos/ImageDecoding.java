@@ -7,7 +7,11 @@ import android.media.ExifInterface;
 
 import java.io.IOException;
 
-class ImageManipulations {
+class ImageDecoding {
+
+    static Bitmap getScaledAndRotatedImage(String path, int reqWidth, int reqHeight){
+        return rotateImageByExif(getScaledDownImage(path, reqWidth, reqHeight), path);
+    }
 
     static Bitmap getScaledDownImage(String imagePath, int reqWidth, int reqHeight) {
         BitmapFactory.Options options = new BitmapFactory.Options();

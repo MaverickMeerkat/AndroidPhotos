@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.database.ContentObserver;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.provider.MediaStore;
@@ -24,7 +25,8 @@ import android.view.View;
 import android.view.ViewTreeObserver;
 import android.widget.Button;
 import android.widget.Toast;
-import java.util.ArrayList;
+
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
     private RecyclerView recyclerView;
@@ -53,76 +55,28 @@ public class MainActivity extends AppCompatActivity {
         Button btn = findViewById(R.id.show_photos_btn);
         btn.setOnClickListener(this::showPhotos);
 
-        fragmentContainer = findViewById(R.id.fragment_container);
-        fragmentContainer.setVisibility(View.INVISIBLE);
-        fragmentManager = getSupportFragmentManager();
+        initializeFragmentContainer();
+        initializeRecyclerView();
+        initializeViewModel();
+        initializeSetttingsAfterGlobalLayout(savedInstanceState);
 
-        recyclerView = findViewById(R.id.photos_grid_recycler_view);
-        recyclerView.setHasFixedSize(true);
+        registerContentObserver();
+    }
 
-        ActivityManager.MemoryInfo memoryInfo = getAvailableMemory();
-        if (!memoryInfo.lowMemory) {
-            recyclerView.setItemViewCacheSize(RECYCLER_VIEW_CACHE_SIZE);
-        }
-
-        viewModel = ViewModelProviders.of(this).get(PhotosViewModel.class);
-
-        recyclerView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-            @Override
-            public void onGlobalLayout() {
-                recyclerView.getViewTreeObserver().removeOnGlobalLayoutListener(this);
-
-                // calculate image width and photos-per-row
-                int viewWidth = recyclerView.getWidth();
-                int photosPerRow = viewWidth / INITIAL_GRID_IMAGE_WIDTH;
-                gridImageWidth = getGridImageWidth(viewWidth, photosPerRow);
-
-                recyclerView.setLayoutManager(new GridLayoutManager(getBaseContext(), photosPerRow));
-                recyclerAdapter = new RecyclerAdapter(getBaseContext(), viewModel, gridImageWidth,
-                        fragmentManager, fragmentContainer);
-                recyclerView.setAdapter(recyclerAdapter);
-
-                // update state of photos
-                viewModel.getPhotosObject().observe(MainActivity.this, photos -> {
-                    recyclerAdapter.updatePhotosPaths(photos);
-                    recyclerAdapter.notifyDataSetChanged();
-                });
-
-                // update state of show-photos button on rotate
-                viewModel.getShowPhotosButtonState().observe(MainActivity.this, isShowPressed -> {
-                    if (isShowPressed && !photosAlreadyLoaded && isPermissionGranted()) {
-                        viewModel.loadPhotos();
-                    }
-                });
-
-                if (savedInstanceState != null) {
-                    // update state of recycler position
-                    recyclerView.getLayoutManager().
-                            onRestoreInstanceState(savedInstanceState.getParcelable(RECYCLERVIEW_POSITION));
-                    // update state of fragment
-                    if (viewModel.getIsFragmentDisplayed().getValue()) {
-                        fragmentContainer.setVisibility(View.VISIBLE);
-                    }
-                }
-            }
-
-            private int getGridImageWidth(int viewWidth, int photosPerRow) {
-                return INITIAL_GRID_IMAGE_WIDTH +
-                        (viewWidth - photosPerRow * INITIAL_GRID_IMAGE_WIDTH) / photosPerRow;
-            }
-        });
-
+    private void registerContentObserver() {
         externalContentObserver = new ContentObserver(new Handler()) {
             @Override
             public void onChange(boolean selfChange, Uri uri) {
+                super.onChange(selfChange, uri);
                 String path = getRealPathFromURI(MainActivity.this, uri);
 
+                List<String> photosInApp = viewModel.photosProvider.photosUri.getValue();
                 if (path != null) { // add
-                    ArrayList<String> photosInApp = viewModel.getPhotosObject().getValue();
                     if (!photosInApp.contains(path)) {
                         int position = ((LinearLayoutManager) recyclerView.getLayoutManager())
                                 .findFirstVisibleItemPosition();
-                        recyclerAdapter.addItem(0, path);
+                        photosInApp.add(position, path);
+                        recyclerAdapter.notifyItemInserted(0);
                         if (position == 0) {
                             recyclerView.scrollToPosition(0);
                         }
@@ -130,21 +84,18 @@ public class MainActivity extends AppCompatActivity {
                 } else { //remove
                     // removed images come with "empty" uris: "content://media" - so query will fail
                     // added images come with external name:  "content://media/external/images/media/..."
-                    recyclerAdapter.removeItems();
+                    List<String> removedPaths = viewModel.photosProvider.findRemoved(viewModel.getPhotosObject().getValue());
+                    for (String removedPath : removedPaths) {
+                        int position = photosInApp.indexOf(removedPath);
+                        photosInApp.remove(removedPath);
+                        recyclerAdapter.notifyItemRemoved(position);
+                    }
                 }
-                super.onChange(selfChange, uri);
             }
         };
 
         getContentResolver().registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 true, externalContentObserver);
-    }
-
-    private ActivityManager.MemoryInfo getAvailableMemory() {
-        ActivityManager activityManager = (ActivityManager) this.getSystemService(ACTIVITY_SERVICE);
-        ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
-        activityManager.getMemoryInfo(memoryInfo);
-        return memoryInfo;
     }
 
     public String getRealPathFromURI(Context context, Uri contentUri) {
@@ -160,9 +111,115 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
+    public void unregisterContentObserver() {
+        getContentResolver().unregisterContentObserver(externalContentObserver); // memory leak if forget to unregister
+    }
+
+    private void initializeViewModel() {
+        PhotosProvider photosProvider = new PhotosProvider(this, AsyncTask.THREAD_POOL_EXECUTOR);
+        viewModel = ViewModelProviders.of(this, new PhotosViewModelFactory(photosProvider)).get(PhotosViewModel.class);
+    }
+
+    private void initializeRecyclerView() {
+        recyclerView = findViewById(R.id.photos_grid_recycler_view);
+        recyclerView.setHasFixedSize(true);
+
+        ActivityManager.MemoryInfo memoryInfo = getAvailableMemory();
+        if (!memoryInfo.lowMemory) {
+            recyclerView.setItemViewCacheSize(RECYCLER_VIEW_CACHE_SIZE);
+        }
+    }
+
+    private void initializeFragmentContainer() {
+        fragmentContainer = findViewById(R.id.fragment_container);
+        fragmentContainer.setVisibility(View.INVISIBLE);
+        fragmentManager = getSupportFragmentManager();
+    }
+
+    private void initializeSetttingsAfterGlobalLayout(Bundle savedInstanceState) {
+        recyclerView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                recyclerView.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+
+                setRecyclerView();
+                observePhotosChanges();
+                observeShowPhotosState();
+
+                if (savedInstanceState != null) {
+                    updateRecyclerViewPosition();
+                    updateFragmentVisibility();
+                }
+            }
+
+            private void updateFragmentVisibility() {
+                // update state of fragment
+                if (viewModel.getIsFragmentDisplayed().getValue()) {
+                    fragmentContainer.setVisibility(View.VISIBLE);
+                }
+            }
+
+            private void updateRecyclerViewPosition() {
+                // update state of recycler position
+                recyclerView.getLayoutManager().
+                        onRestoreInstanceState(savedInstanceState.getParcelable(RECYCLERVIEW_POSITION));
+            }
+
+            private void observeShowPhotosState() {
+                // update state of show-photos button on rotate
+                viewModel.getShowPhotosButtonState().observe(MainActivity.this, isShowPressed -> {
+                    if (isShowPressed && !photosAlreadyLoaded && isPermissionGranted()) {
+                        viewModel.loadPhotos();
+                    }
+                });
+            }
+
+            private void observePhotosChanges() {
+                // update state of photos
+                viewModel.getPhotosObject().observe(MainActivity.this, photos -> {
+                    recyclerAdapter.submitList(photos);
+                    recyclerAdapter.notifyDataSetChanged();
+                });
+            }
+
+            private void setRecyclerView() {
+                setRecyclerViewLayoutManager();
+                setRecyclerViewAdapter();
+            }
+
+            private void setRecyclerViewAdapter() {
+                recyclerAdapter = new RecyclerAdapter(MainActivity.this, viewModel, gridImageWidth,
+                        fragmentManager, fragmentContainer);
+                recyclerView.setAdapter(recyclerAdapter);
+            }
+
+            private void setRecyclerViewLayoutManager() {
+                // calculate image width and photos-per-row
+                int viewWidth = recyclerView.getWidth();
+                int photosPerRow = viewWidth / INITIAL_GRID_IMAGE_WIDTH;
+                gridImageWidth = getGridImageWidth(viewWidth, photosPerRow);
+
+                recyclerView.setLayoutManager(new GridLayoutManager(getBaseContext(), photosPerRow));
+            }
+
+            private int getGridImageWidth(int viewWidth, int photosPerRow) {
+                return INITIAL_GRID_IMAGE_WIDTH +
+                        (viewWidth - photosPerRow * INITIAL_GRID_IMAGE_WIDTH) / photosPerRow;
+            }
+        });
+    }
+
+    private ActivityManager.MemoryInfo getAvailableMemory() {
+        ActivityManager activityManager = (ActivityManager) this.getSystemService(ACTIVITY_SERVICE);
+        ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
+        activityManager.getMemoryInfo(memoryInfo);
+        return memoryInfo;
+    }
+
     @Override
     protected void onDestroy() {
-        getContentResolver().unregisterContentObserver(externalContentObserver); // memory leak if forget to unregister
+        unregisterContentObserver();
         super.onDestroy();
     }
 
@@ -227,7 +284,7 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
         switch (requestCode) {
-            case PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE: {
+            case PERMISSIONS_REQUEST_READ_EXTERNAL_STORAGE:
                 if (grantResults.length > 0
                         && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     viewModel.loadPhotos();
@@ -235,7 +292,6 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(this, "No permission. Abort", Toast.LENGTH_LONG).show();
                 }
                 return;
-            }
         }
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
