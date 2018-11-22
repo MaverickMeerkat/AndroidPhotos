@@ -16,6 +16,7 @@ import android.support.annotation.NonNull;
 import android.support.design.widget.Snackbar;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentManager;
+import android.support.v4.app.FragmentTransaction;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.GridLayoutManager;
@@ -44,6 +45,7 @@ public class MainActivity extends AppCompatActivity {
     private final static String BUTTON_STATE = "BUTTON_STATE";
     private final static String FRAGMENT_STATE = "FRAGMENT_STATE";
     private final static String RECYCLERVIEW_POSITION = "RECYCLERVIEW_POSITION";
+    private final static String TAG_FRAGMENT = "displayPhotoFragment";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,6 +98,18 @@ public class MainActivity extends AppCompatActivity {
 
         getContentResolver().registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 true, externalContentObserver);
+    }
+
+    private void showFragment(String path) {
+        DisplayPhotoFragment fragment = DisplayPhotoFragment.createInstance(path);
+        FragmentTransaction ft = fragmentManager.beginTransaction();
+        ft.replace(R.id.fragment_container, fragment, TAG_FRAGMENT);
+        ft.addToBackStack(null);
+//        ft.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN);
+//        ft.setCustomAnimations(android.R.anim.fade_in, android.R.anim.fade_out);
+        ft.commit();
+        fragmentContainer.setVisibility(View.VISIBLE);
+        viewModel.getIsFragmentDisplayed().postValue(true);
     }
 
     public String getRealPathFromURI(Context context, Uri contentUri) {
@@ -189,8 +203,8 @@ public class MainActivity extends AppCompatActivity {
             }
 
             private void setRecyclerViewAdapter() {
-                recyclerAdapter = new RecyclerAdapter(MainActivity.this, viewModel, gridImageWidth,
-                        fragmentManager, fragmentContainer);
+                recyclerAdapter = new RecyclerAdapter(MainActivity.this, viewModel, gridImageWidth);
+                recyclerAdapter.setOnPhotoClickListener(path -> showFragment(path));
                 recyclerView.setAdapter(recyclerAdapter);
             }
 
